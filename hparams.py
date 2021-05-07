@@ -1,11 +1,12 @@
-import tensorflow as tf
+# import tensorflow as tf
+from types import SimpleNamespace
 import numpy as np
 
 # NOTE: If you want full control for model architecture. please take a look
 # at the code and change whatever you want. Some hyper parameters are hardcoded.
 
 # Default hyperparameters:
-hparams = tf.contrib.training.HParams(
+hparams = SimpleNamespace(
     name="wavenet_vocoder",
 
     # Convenient model builder
@@ -24,7 +25,7 @@ hparams = tf.contrib.training.HParams(
     quantize_channels=65536,  # 65536 or 256
 
     # Audio:
-    sample_rate=22050,
+    sample_rate=24000,
     # this is only valid for mulaw is True
     silence_threshold=2,
     num_mels=80,
@@ -68,7 +69,7 @@ hparams = tf.contrib.training.HParams(
     legacy=True,
 
     # Local conditioning (set negative value to disable))
-    cin_channels=80,
+    cin_channels=-1,
     # If True, use transposed convolutions to upsample conditional features,
     # otherwise repeat features to adjust time resolution
     upsample_conditional_features=True,

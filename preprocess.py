@@ -31,9 +31,10 @@ def write_metadata(metadata, out_dir):
     frames = sum([m[2] for m in metadata])
     sr = hparams.sample_rate
     hours = frames / sr / 3600
-    print('Wrote %d utterances, %d time steps (%.2f hours)' % (len(metadata), frames, hours))
-    print('Max input length:  %d' % max(len(m[3]) for m in metadata))
-    print('Max output length: %d' % max(m[2] for m in metadata))
+    print('Wrote %d utterances, %d time steps (%.2f hours)' %
+          (len(metadata), frames, hours))
+    # print('Max input length:  %d' % max(len(m[3]) for m in metadata))
+    # print('Max output length: %d' % max(m[2] for m in metadata))
 
 
 if __name__ == "__main__":
@@ -50,11 +51,13 @@ if __name__ == "__main__":
         with open(preset) as f:
             hparams.parse_json(f.read())
     # Override hyper parameters
-    hparams.parse(args["--hparams"])
+    # hparams.parse(args["--hparams"])
     assert hparams.name == "wavenet_vocoder"
 
     print("Sampling frequency: {}".format(hparams.sample_rate))
 
-    assert name in ["cmu_arctic", "ljspeech", "librivox", "jsut"]
+    assert name in [
+        "cmu_arctic", "ljspeech", "librivox", "jsut", "custom_data"
+    ]
     mod = importlib.import_module(name)
     preprocess(mod, in_dir, out_dir, num_workers)
