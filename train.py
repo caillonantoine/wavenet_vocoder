@@ -27,6 +27,7 @@ import random
 import numpy as np
 
 import matplotlib
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
@@ -47,8 +48,8 @@ from nnmnkwii.datasets import FileSourceDataset, FileDataSource
 import librosa.display
 
 from sklearn.model_selection import train_test_split
-from keras.utils import np_utils
-from tensorboardX import SummaryWriter
+# from keras.utils import np_utils
+from torch.utils.tensorboard import SummaryWriter
 from matplotlib import cm
 from warnings import warn
 
@@ -71,34 +72,46 @@ def sanity_check(model, c, g):
     if model.has_speaker_embedding():
         if g is None:
             raise RuntimeError(
-                "WaveNet expects speaker embedding, but speaker-id is not provided")
+                "WaveNet expects speaker embedding, but speaker-id is not provided"
+            )
     else:
         if g is not None:
             raise RuntimeError(
-                "WaveNet expects no speaker embedding, but speaker-id is provided")
+                "WaveNet expects no speaker embedding, but speaker-id is provided"
+            )
 
     if model.local_conditioning_enabled():
         if c is None:
-            raise RuntimeError("WaveNet expects conditional features, but not given")
+            raise RuntimeError(
+                "WaveNet expects conditional features, but not given")
     else:
         if c is not None:
-            raise RuntimeError("WaveNet expects no conditional features, but given")
+            raise RuntimeError(
+                "WaveNet expects no conditional features, but given")
 
 
 def _pad(seq, max_len, constant_values=0):
     return np.pad(seq, (0, max_len - len(seq)),
-                  mode='constant', constant_values=constant_values)
+                  mode='constant',
+                  constant_values=constant_values)
 
 
 def _pad_2d(x, max_len, b_pad=0, constant_values=0):
     x = np.pad(x, [(b_pad, max_len - len(x) - b_pad), (0, 0)],
-               mode="constant", constant_values=constant_values)
+               mode="constant",
+               constant_values=constant_values)
     return x
 
 
 class _NPYDataSource(FileDataSource):
-    def __init__(self, data_root, col, speaker_id=None,
-                 train=True, test_size=0.05, test_num_samples=None, random_state=1234):
+    def __init__(self,
+                 data_root,
+                 col,
+                 speaker_id=None,
+                 train=True,
+                 test_size=0.05,
+                 test_num_samples=None,
+                 random_state=1234):
         self.data_root = data_root
         self.col = col
         self.lengths = []
@@ -130,11 +143,13 @@ class _NPYDataSource(FileDataSource):
         self.lengths = list(
             map(lambda l: int(l.decode("utf-8").split("|")[2]), lines))
 
-        paths_relative = list(map(lambda l: l.decode("utf-8").split("|")[self.col], lines))
+        paths_relative = list(
+            map(lambda l: l.decode("utf-8").split("|")[self.col], lines))
         paths = list(map(lambda f: join(self.data_root, f), paths_relative))
 
         if self.multi_speaker:
-            speaker_ids = list(map(lambda l: int(l.decode("utf-8").split("|")[-1]), lines))
+            speaker_ids = list(
+                map(lambda l: int(l.decode("utf-8").split("|")[-1]), lines))
             self.speaker_ids = speaker_ids
             if self.speaker_id is not None:
                 # Filter by speaker_id
@@ -188,10 +203,13 @@ class PartialyRandomizedSimilarTimeLengthSampler(Sampler):
     2. Pick a small patch and randomize it
     3. Permutate mini-batches
     """
-
-    def __init__(self, lengths, batch_size=16, batch_group_size=None,
+    def __init__(self,
+                 lengths,
+                 batch_size=16,
+                 batch_group_size=None,
                  permutate=True):
-        self.lengths, self.sorted_indices = torch.sort(torch.LongTensor(lengths))
+        self.lengths, self.sorted_indices = torch.sort(
+            torch.LongTensor(lengths))
 
         self.batch_size = batch_size
         if batch_group_size is None:
@@ -216,7 +234,8 @@ class PartialyRandomizedSimilarTimeLengthSampler(Sampler):
         if self.permutate:
             perm = np.arange(len(indices[:e]) // self.batch_size)
             random.shuffle(perm)
-            indices[:e] = indices[:e].view(-1, self.batch_size)[perm, :].view(-1)
+            indices[:e] = indices[:e].view(-1,
+                                           self.batch_size)[perm, :].view(-1)
 
         # Handle last elements
         s += batch_group_size
@@ -329,8 +348,11 @@ class DiscretizedMixturelogisticLoss(nn.Module):
         mask_ = mask.expand_as(target)
 
         losses = discretized_mix_logistic_loss(
-            input, target, num_classes=hparams.quantize_channels,
-            log_scale_min=hparams.log_scale_min, reduce=False)
+            input,
+            target,
+            num_classes=hparams.quantize_channels,
+            log_scale_min=hparams.log_scale_min,
+            reduce=False)
         assert losses.size() == target.size()
         return ((losses * mask_).sum()) / mask_.sum()
 
@@ -380,7 +402,8 @@ def collate_fn(batch):
             if hparams.upsample_conditional_features:
                 assert_ready_for_upsampling(x, c)
                 if max_time_steps is not None:
-                    max_steps = ensure_divisible(max_time_steps, audio.get_hop_size(), True)
+                    max_steps = ensure_divisible(max_time_steps,
+                                                 audio.get_hop_size(), True)
                     if len(x) > max_steps:
                         max_time_frames = max_steps // audio.get_hop_size()
                         s = np.random.randint(0, len(c) - max_time_frames)
@@ -418,26 +441,37 @@ def collate_fn(batch):
     # pad for time-axis
     if is_mulaw_quantize(hparams.input_type):
         padding_value = P.mulaw_quantize(0, mu=hparams.quantize_channels)
-        x_batch = np.array([_pad_2d(np_utils.to_categorical(
-            x[0], num_classes=hparams.quantize_channels),
-            max_input_len, padding_value) for x in batch], dtype=np.float32)
+        x_batch = np.array([
+            _pad_2d(
+                np_utils.to_categorical(x[0],
+                                        num_classes=hparams.quantize_channels),
+                max_input_len, padding_value) for x in batch
+        ],
+                           dtype=np.float32)
     else:
-        x_batch = np.array([_pad_2d(x[0].reshape(-1, 1), max_input_len)
-                            for x in batch], dtype=np.float32)
+        x_batch = np.array(
+            [_pad_2d(x[0].reshape(-1, 1), max_input_len) for x in batch],
+            dtype=np.float32)
     assert len(x_batch.shape) == 3
 
     # (B, T)
     if is_mulaw_quantize(hparams.input_type):
         padding_value = P.mulaw_quantize(0, mu=hparams.quantize_channels)
-        y_batch = np.array([_pad(x[0], max_input_len, constant_values=padding_value) for x in batch], dtype=np.int)
+        y_batch = np.array([
+            _pad(x[0], max_input_len, constant_values=padding_value)
+            for x in batch
+        ],
+                           dtype=np.int)
     else:
-        y_batch = np.array([_pad(x[0], max_input_len) for x in batch], dtype=np.float32)
+        y_batch = np.array([_pad(x[0], max_input_len) for x in batch],
+                           dtype=np.float32)
     assert len(y_batch.shape) == 2
 
     # (B, T, D)
     if local_conditioning:
         max_len = max([len(x[1]) for x in batch])
-        c_batch = np.array([_pad_2d(x[1], max_len) for x in batch], dtype=np.float32)
+        c_batch = np.array([_pad_2d(x[1], max_len) for x in batch],
+                           dtype=np.float32)
         assert len(c_batch.shape) == 3
         # (B x C x T)
         c_batch = torch.FloatTensor(c_batch).transpose(1, 2).contiguous()
@@ -479,7 +513,16 @@ def save_waveplot(path, y_hat, y_target):
     plt.close()
 
 
-def eval_model(global_step, writer, device, model, y, c, g, input_lengths, eval_dir, ema=None):
+def eval_model(global_step,
+               writer,
+               device,
+               model,
+               y,
+               c,
+               g,
+               input_lengths,
+               eval_dir,
+               ema=None):
     if ema is not None:
         print("Using averaged model for evaluation")
         model = clone_as_averaged_model(device, model, ema)
@@ -516,7 +559,8 @@ def eval_model(global_step, writer, device, model, y, c, g, input_lengths, eval_
     # (C,)
     if is_mulaw_quantize(hparams.input_type):
         initial_input = np_utils.to_categorical(
-            initial_value, num_classes=hparams.quantize_channels).astype(np.float32)
+            initial_value,
+            num_classes=hparams.quantize_channels).astype(np.float32)
         initial_input = torch.from_numpy(initial_input).view(
             1, 1, hparams.quantize_channels)
     else:
@@ -525,16 +569,22 @@ def eval_model(global_step, writer, device, model, y, c, g, input_lengths, eval_
 
     # Run the model in fast eval mode
     with torch.no_grad():
-        y_hat = model.incremental_forward(
-            initial_input, c=c, g=g, T=length, softmax=True, quantize=True, tqdm=tqdm,
-            log_scale_min=hparams.log_scale_min)
+        y_hat = model.incremental_forward(initial_input,
+                                          c=c,
+                                          g=g,
+                                          T=length,
+                                          softmax=True,
+                                          quantize=True,
+                                          tqdm=tqdm,
+                                          log_scale_min=hparams.log_scale_min)
 
     if is_mulaw_quantize(hparams.input_type):
         y_hat = y_hat.max(1)[1].view(-1).long().cpu().data.numpy()
         y_hat = P.inv_mulaw_quantize(y_hat, hparams.quantize_channels)
         y_target = P.inv_mulaw_quantize(y_target, hparams.quantize_channels)
     elif is_mulaw(hparams.input_type):
-        y_hat = P.inv_mulaw(y_hat.view(-1).cpu().data.numpy(), hparams.quantize_channels)
+        y_hat = P.inv_mulaw(
+            y_hat.view(-1).cpu().data.numpy(), hparams.quantize_channels)
         y_target = P.inv_mulaw(y_target, hparams.quantize_channels)
     else:
         y_hat = y_hat.view(-1).cpu().data.numpy()
@@ -551,7 +601,12 @@ def eval_model(global_step, writer, device, model, y, c, g, input_lengths, eval_
     save_waveplot(path, y_hat, y_target)
 
 
-def save_states(global_step, writer, y_hat, y, input_lengths, checkpoint_dir=None):
+def save_states(global_step,
+                writer,
+                y_hat,
+                y,
+                input_lengths,
+                checkpoint_dir=None):
     print("Save intermediate states at step {}".format(global_step))
     idx = np.random.randint(0, len(y_hat))
     length = input_lengths[idx].data.cpu().item()
@@ -595,10 +650,24 @@ def save_states(global_step, writer, y_hat, y, input_lengths, checkpoint_dir=Non
     librosa.output.write_wav(path, y, sr=hparams.sample_rate)
 
 
-def __train_step(device, phase, epoch, global_step, global_test_step,
-                 model, optimizer, writer, criterion,
-                 x, y, c, g, input_lengths,
-                 checkpoint_dir, eval_dir=None, do_eval=False, ema=None):
+def __train_step(device,
+                 phase,
+                 epoch,
+                 global_step,
+                 global_test_step,
+                 model,
+                 optimizer,
+                 writer,
+                 criterion,
+                 x,
+                 y,
+                 c,
+                 g,
+                 input_lengths,
+                 checkpoint_dir,
+                 eval_dir=None,
+                 do_eval=False,
+                 ema=None):
     sanity_check(model, c, g)
 
     # x : (B, C, T)
@@ -618,8 +687,8 @@ def __train_step(device, phase, epoch, global_step, global_test_step,
     current_lr = hparams.initial_learning_rate
     if train and hparams.lr_schedule is not None:
         lr_schedule_f = getattr(lrschedule, hparams.lr_schedule)
-        current_lr = lr_schedule_f(
-            hparams.initial_learning_rate, step, **hparams.lr_schedule_kwargs)
+        current_lr = lr_schedule_f(hparams.initial_learning_rate, step,
+                                   **hparams.lr_schedule_kwargs)
         for param_group in optimizer.param_groups:
             param_group['lr'] = current_lr
     optimizer.zero_grad()
@@ -655,17 +724,20 @@ def __train_step(device, phase, epoch, global_step, global_test_step,
 
     if train and step > 0 and step % hparams.checkpoint_interval == 0:
         save_states(step, writer, y_hat, y, input_lengths, checkpoint_dir)
-        save_checkpoint(device, model, optimizer, step, checkpoint_dir, epoch, ema)
+        save_checkpoint(device, model, optimizer, step, checkpoint_dir, epoch,
+                        ema)
 
     if do_eval:
         # NOTE: use train step (i.e., global_step) for filename
-        eval_model(global_step, writer, device, model, y, c, g, input_lengths, eval_dir, ema)
+        eval_model(global_step, writer, device, model, y, c, g, input_lengths,
+                   eval_dir, ema)
 
     # Update
     if train:
         loss.backward()
         if clip_thresh > 0:
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), clip_thresh)
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(),
+                                                       clip_thresh)
         optimizer.step()
         # update moving average
         if ema is not None:
@@ -683,7 +755,12 @@ def __train_step(device, phase, epoch, global_step, global_test_step,
     return loss.item()
 
 
-def train_loop(device, model, data_loaders, optimizer, writer, checkpoint_dir=None):
+def train_loop(device,
+               model,
+               data_loaders,
+               optimizer,
+               writer,
+               checkpoint_dir=None):
     if is_mulaw_quantize(hparams.input_type):
         criterion = MaskedCrossEntropyLoss()
     else:
@@ -703,7 +780,8 @@ def train_loop(device, model, data_loaders, optimizer, writer, checkpoint_dir=No
             train = (phase == "train")
             running_loss = 0.
             test_evaluated = False
-            for step, (x, y, c, g, input_lengths) in tqdm(enumerate(data_loader)):
+            for step, (x, y, c, g,
+                       input_lengths) in tqdm(enumerate(data_loader)):
                 # Whether to save eval (i.e., online decoding) result
                 do_eval = False
                 eval_dir = join(checkpoint_dir, "{}_eval".format(phase))
@@ -719,13 +797,16 @@ def train_loop(device, model, data_loaders, optimizer, writer, checkpoint_dir=No
                     do_eval = True
                     test_evaluated = True
                 if do_eval:
-                    print("[{}] Eval at train step {}".format(phase, global_step))
+                    print("[{}] Eval at train step {}".format(
+                        phase, global_step))
 
                 # Do step
-                running_loss += __train_step(device,
-                                             phase, global_epoch, global_step, global_test_step, model,
-                                             optimizer, writer, criterion, x, y, c, g, input_lengths,
-                                             checkpoint_dir, eval_dir, do_eval, ema)
+                running_loss += __train_step(device, phase, global_epoch,
+                                             global_step, global_test_step,
+                                             model, optimizer, writer,
+                                             criterion, x, y, c, g,
+                                             input_lengths, checkpoint_dir,
+                                             eval_dir, do_eval, ema)
 
                 # update global state
                 if train:
@@ -743,31 +824,41 @@ def train_loop(device, model, data_loaders, optimizer, writer, checkpoint_dir=No
         global_epoch += 1
 
 
-def save_checkpoint(device, model, optimizer, step, checkpoint_dir, epoch, ema=None):
-    checkpoint_path = join(
-        checkpoint_dir, "checkpoint_step{:09d}.pth".format(global_step))
-    optimizer_state = optimizer.state_dict() if hparams.save_optimizer_state else None
+def save_checkpoint(device,
+                    model,
+                    optimizer,
+                    step,
+                    checkpoint_dir,
+                    epoch,
+                    ema=None):
+    checkpoint_path = join(checkpoint_dir,
+                           "checkpoint_step{:09d}.pth".format(global_step))
+    optimizer_state = optimizer.state_dict(
+    ) if hparams.save_optimizer_state else None
     global global_test_step
-    torch.save({
-        "state_dict": model.state_dict(),
-        "optimizer": optimizer_state,
-        "global_step": step,
-        "global_epoch": epoch,
-        "global_test_step": global_test_step,
-    }, checkpoint_path)
-    print("Saved checkpoint:", checkpoint_path)
-
-    if ema is not None:
-        averaged_model = clone_as_averaged_model(device, model, ema)
-        checkpoint_path = join(
-            checkpoint_dir, "checkpoint_step{:09d}_ema.pth".format(global_step))
-        torch.save({
-            "state_dict": averaged_model.state_dict(),
+    torch.save(
+        {
+            "state_dict": model.state_dict(),
             "optimizer": optimizer_state,
             "global_step": step,
             "global_epoch": epoch,
             "global_test_step": global_test_step,
         }, checkpoint_path)
+    print("Saved checkpoint:", checkpoint_path)
+
+    if ema is not None:
+        averaged_model = clone_as_averaged_model(device, model, ema)
+        checkpoint_path = join(
+            checkpoint_dir,
+            "checkpoint_step{:09d}_ema.pth".format(global_step))
+        torch.save(
+            {
+                "state_dict": averaged_model.state_dict(),
+                "optimizer": optimizer_state,
+                "global_step": step,
+                "global_epoch": epoch,
+                "global_test_step": global_test_step,
+            }, checkpoint_path)
         print("Saved averaged checkpoint:", checkpoint_path)
 
 
@@ -775,7 +866,8 @@ def build_model():
     if is_mulaw_quantize(hparams.input_type):
         if hparams.out_channels != hparams.quantize_channels:
             raise RuntimeError(
-                "out_channels must equal to quantize_chennels if input_type is 'mulaw-quantize'")
+                "out_channels must equal to quantize_chennels if input_type is 'mulaw-quantize'"
+            )
     if hparams.upsample_conditional_features and hparams.cin_channels < 0:
         s = "Upsample conv layers were specified while local conditioning disabled. "
         s += "Notice that upsample conv layers will never be used."
@@ -852,7 +944,8 @@ def restore_parts(path, model):
                 model.load_state_dict(model_dict)
             except RuntimeError as e:
                 print(str(e))
-                warn("{}: may contain invalid size of weight. skipping...".format(k))
+                warn("{}: may contain invalid size of weight. skipping...".
+                     format(k))
 
 
 def get_data_loaders(data_root, speaker_id, test_shuffle=True):
@@ -860,17 +953,21 @@ def get_data_loaders(data_root, speaker_id, test_shuffle=True):
     local_conditioning = hparams.cin_channels > 0
     for phase in ["train", "test"]:
         train = phase == "train"
-        X = FileSourceDataset(RawAudioDataSource(data_root, speaker_id=speaker_id,
-                                                 train=train,
-                                                 test_size=hparams.test_size,
-                                                 test_num_samples=hparams.test_num_samples,
-                                                 random_state=hparams.random_state))
+        X = FileSourceDataset(
+            RawAudioDataSource(data_root,
+                               speaker_id=speaker_id,
+                               train=train,
+                               test_size=hparams.test_size,
+                               test_num_samples=hparams.test_num_samples,
+                               random_state=hparams.random_state))
         if local_conditioning:
-            Mel = FileSourceDataset(MelSpecDataSource(data_root, speaker_id=speaker_id,
-                                                      train=train,
-                                                      test_size=hparams.test_size,
-                                                      test_num_samples=hparams.test_num_samples,
-                                                      random_state=hparams.random_state))
+            Mel = FileSourceDataset(
+                MelSpecDataSource(data_root,
+                                  speaker_id=speaker_id,
+                                  train=train,
+                                  test_size=hparams.test_size,
+                                  test_num_samples=hparams.test_num_samples,
+                                  random_state=hparams.random_state))
             assert len(X) == len(Mel)
             print("Local conditioning enabled. Shape of a sample: {}.".format(
                 Mel[0].shape))
@@ -889,10 +986,13 @@ def get_data_loaders(data_root, speaker_id, test_shuffle=True):
             shuffle = test_shuffle
 
         dataset = PyTorchDataset(X, Mel)
-        data_loader = data_utils.DataLoader(
-            dataset, batch_size=hparams.batch_size,
-            num_workers=hparams.num_workers, sampler=sampler, shuffle=shuffle,
-            collate_fn=collate_fn, pin_memory=hparams.pin_memory)
+        data_loader = data_utils.DataLoader(dataset,
+                                            batch_size=hparams.batch_size,
+                                            num_workers=hparams.num_workers,
+                                            sampler=sampler,
+                                            shuffle=shuffle,
+                                            collate_fn=collate_fn,
+                                            pin_memory=hparams.pin_memory)
 
         speaker_ids = {}
         for idx, (x, c, g) in enumerate(dataset):
@@ -931,9 +1031,9 @@ if __name__ == "__main__":
         with open(preset) as f:
             hparams.parse_json(f.read())
     # Override hyper parameters
-    hparams.parse(args["--hparams"])
+    # hparams.parse(args["--hparams"])
     assert hparams.name == "wavenet_vocoder"
-    print(hparams_debug_string())
+    print(hparams.__dict__)
 
     fs = hparams.sample_rate
 
@@ -952,10 +1052,11 @@ if __name__ == "__main__":
         receptive_field, receptive_field / fs * 1000))
 
     optimizer = optim.Adam(model.parameters(),
-                           lr=hparams.initial_learning_rate, betas=(
-        hparams.adam_beta1, hparams.adam_beta2),
-        eps=hparams.adam_eps, weight_decay=hparams.weight_decay,
-        amsgrad=hparams.amsgrad)
+                           lr=hparams.initial_learning_rate,
+                           betas=(hparams.adam_beta1, hparams.adam_beta2),
+                           eps=hparams.adam_eps,
+                           weight_decay=hparams.weight_decay,
+                           amsgrad=hparams.amsgrad)
 
     if checkpoint_restore_parts is not None:
         restore_parts(checkpoint_restore_parts, model)
@@ -972,14 +1073,18 @@ if __name__ == "__main__":
 
     # Train!
     try:
-        train_loop(device, model, data_loaders, optimizer, writer,
+        train_loop(device,
+                   model,
+                   data_loaders,
+                   optimizer,
+                   writer,
                    checkpoint_dir=checkpoint_dir)
     except KeyboardInterrupt:
         print("Interrupted!")
         pass
     finally:
-        save_checkpoint(
-            device, model, optimizer, global_step, checkpoint_dir, global_epoch)
+        save_checkpoint(device, model, optimizer, global_step, checkpoint_dir,
+                        global_epoch)
 
     print("Finished")
 
